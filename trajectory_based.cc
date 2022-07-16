@@ -59,12 +59,12 @@ double distance;
 double interval = 0.1;
 uint32_t helloSendAfter = 5;
 uint32_t numPair = 150;
-int MAX_window = 20;
+int MAX_window = 200;
 
 uint32_t gridSize = 1000;
 uint32_t BOARD_ROWS = 4;
 uint32_t BOARD_COLS = 6;
-std::string nextHopGrid[24][24][4];
+std::string nextHopGrid[24][24][8];
 
 // Use the delimiter to split string.
 std::vector<std::string> splitString(std::string value, std::string delimiter)
@@ -347,10 +347,27 @@ float dist(float x1, float y1, float x2, float y2)
 
 void ScheduleNeighbor(Ptr<Socket> socket, Ptr<Packet> packet, NodeHandler *currentNode, uint32_t destinationId)
 {
+    bool exist = false;
+    double time = Simulator::Now().GetSeconds();
+
+    for (std::vector<std::string>::iterator iter = existNode[(int)time].begin(); iter != existNode[(int)time].end(); iter++)
+    {
+        if ((int)currentNode->getNodeID() == stoi(*iter))
+        {
+            exist = true;
+        }
+    }
+
+    if (exist == false)
+        return;
+
     int index_row[3], index_col[3]; // source, destination, neighbor
-    int Next_hop_row[6] = {-1, -1, -1, -1, -1, -1};
-    int Next_hop_col[6] = {-1, -1, -1, -1, -1, -1};
-    int Grid_value[6] = {-1, -1, -1, -1, -1, -1};
+    int Next_hop_row[12] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+    int Next_hop_col[12] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+    int select_row[4] = {-1, -1, -1, -1};
+    int select_col[4] = {-1, -1, -1, -1};
+    int Grid_value[12] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+    bool dst_grid = false;
 
     Ptr<MobilityModel> current_mob = c.Get(currentNode->getNodeID())->GetObject<MobilityModel>();
     float src_X = current_mob->GetPosition().x;
@@ -366,10 +383,16 @@ void ScheduleNeighbor(Ptr<Socket> socket, Ptr<Packet> packet, NodeHandler *curre
 
     for (int i = 0; i < 2; i++)
     {
-        if (index_row[i] == 4)
+        if (index_row[i] < 0)
+            index_row[i] = 0;
+
+        if (index_col[i] < 0)
+            index_col[i] = 0;
+
+        if (index_row[i] >= 4)
             index_row[i] = 3;
 
-        if (index_col[i] == 6)
+        if (index_col[i] >= 6)
             index_col[i] = 5;
     }
 
@@ -377,52 +400,57 @@ void ScheduleNeighbor(Ptr<Socket> socket, Ptr<Packet> packet, NodeHandler *curre
     {
         Next_hop_row[0] = index_row[0];
         Next_hop_col[0] = index_col[0];
+        Grid_value[0] = 100;
+        select_row[0] = index_row[0];
+        select_col[0] = index_col[0];
     }
     else
     {
         float max = -1;
         int temp_row, temp_col;
 
-        for (int round = 0; round < 3; round++)
+        for (int round = 0; round < 4; round++)
         {
-            std::string gridValue[4];
+            std::string gridValue[8];
             if (round == 0)
             {
-                for (int k = 0; k < 4; k++)
-                    gridValue[k] = nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][k];
                 temp_row = index_row[0];
                 temp_col = index_col[0];
             }
             if (round == 1)
             {
-                for (int k = 0; k < 4; k++)
-                    gridValue[k] = nextHopGrid[Next_hop_row[0] * BOARD_COLS + Next_hop_col[0]][index_row[1] * BOARD_COLS + index_col[1]][k];
                 temp_row = Next_hop_row[0];
                 temp_col = Next_hop_col[0];
             }
             if (round == 2)
             {
-                for (int k = 0; k < 4; k++)
-                    gridValue[k] = nextHopGrid[Next_hop_row[1] * BOARD_COLS + Next_hop_col[1]][index_row[1] * BOARD_COLS + index_col[1]][k];
                 temp_row = Next_hop_row[1];
                 temp_col = Next_hop_col[1];
             }
+            if (round == 3)
+            {
+                temp_row = Next_hop_row[2];
+                temp_col = Next_hop_col[2];
+            }
 
-            int choice[2] = {-1, -1};
+            for (int k = 0; k < 8; k++)
+                gridValue[k] = nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][k];
+
+            int choice[3] = {-1, -1, -1};
 
             max = -1;
-            for (int i = 0; i < 4; i++) // choise neighbor grid with max grid value
+            for (int i = 0; i < 8; i++) // choise neighbor grid with max grid value
             {
                 if (std::atof(gridValue[i].c_str()) > max)
                 {
                     choice[0] = i;
                     max = std::atof(gridValue[i].c_str());
-                    Grid_value[round * 2] = max;
+                    Grid_value[round * 3] = max;
                 }
             }
 
             max = -1;
-            for (int i = 0; i < 4; i++) // neighbor grid with sub-max grid value
+            for (int i = 0; i < 8; i++) // neighbor grid with sub-max grid value
             {
                 if (i == choice[0])
                     continue;
@@ -431,126 +459,190 @@ void ScheduleNeighbor(Ptr<Socket> socket, Ptr<Packet> packet, NodeHandler *curre
                 {
                     choice[1] = i;
                     max = std::atof(gridValue[i].c_str());
-                    Grid_value[round * 2 + 1] = max;
+                    Grid_value[round * 3 + 1] = max;
                 }
             }
 
-            for (int i = 0; i < 2; i++)
+            max = -1;
+            for (int i = 0; i < 8; i++) // neighbor grid with sub-max grid value
+            {
+                if (i == choice[0] || i == choice[1])
+                    continue;
+
+                if (std::atof(gridValue[i].c_str()) > max)
+                {
+                    choice[2] = i;
+                    max = std::atof(gridValue[i].c_str());
+                    Grid_value[round * 3 + 2] = max;
+                }
+            }
+
+            for (int i = 0; i < 3; i++)
             {
                 if (choice[i] == 0)
                 {
-                    Next_hop_row[round * 2 + i] = temp_row - 1;
-                    Next_hop_col[round * 2 + i] = temp_col;
+                    Next_hop_row[round * 3 + i] = temp_row - 1;
+                    Next_hop_col[round * 3 + i] = temp_col;
                 }
                 else if (choice[i] == 1)
                 {
-                    Next_hop_row[round * 2 + i] = temp_row + 1;
-                    Next_hop_col[round * 2 + i] = temp_col;
+                    Next_hop_row[round * 3 + i] = temp_row + 1;
+                    Next_hop_col[round * 3 + i] = temp_col;
                 }
                 else if (choice[i] == 2)
                 {
-                    Next_hop_row[round * 2 + i] = temp_row;
-                    Next_hop_col[round * 2 + i] = temp_col - 1;
+                    Next_hop_row[round * 3 + i] = temp_row;
+                    Next_hop_col[round * 3 + i] = temp_col - 1;
                 }
                 else if (choice[i] == 3)
                 {
-                    Next_hop_row[round * 2 + i] = temp_row;
-                    Next_hop_col[round * 2 + i] = temp_col + 1;
+                    Next_hop_row[round * 3 + i] = temp_row;
+                    Next_hop_col[round * 3 + i] = temp_col + 1;
+                }
+                else if (choice[i] == 4)
+                {
+                    Next_hop_row[round * 3 + i] = temp_row - 1;
+                    Next_hop_col[round * 3 + i] = temp_col + 1;
+                }
+                else if (choice[i] == 5)
+                {
+                    Next_hop_row[round * 3 + i] = temp_row + 1;
+                    Next_hop_col[round * 3 + i] = temp_col - 1;
+                }
+                else if (choice[i] == 6)
+                {
+                    Next_hop_row[round * 3 + i] = temp_row - 1;
+                    Next_hop_col[round * 3 + i] = temp_col - 1;
+                }
+                else if (choice[i] == 7)
+                {
+                    Next_hop_row[round * 3 + i] = temp_row + 1;
+                    Next_hop_col[round * 3 + i] = temp_col + 1;
                 }
             }
         }
 
-        // int first_choice = -1;
-        // int second_choice = -1;
+        int first_choice = -1;
+        int second_choice = -1;
+        int third_choice = -1;
 
-        // max = -1;
-        // for (int i = 0; i < 4; i++) // choise neighbor grid with max grid value
-        // {
-        //     if (std::atof(nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][i].c_str()) > max)
-        //     {
-        //         first_choice = i;
-        //         max = std::atof(nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][i].c_str());
-        //     }
-        // }
+        max = -1;
+        for (int i = 0; i < 8; i++) // choise neighbor grid with max grid value
+        {
+            if (std::atof(nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][i].c_str()) > max)
+            {
+                first_choice = i;
+                max = std::atof(nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][i].c_str());
+            }
+        }
 
-        // max = -1;
-        // for (int i = 0; i < 4; i++) // neighbor grid with sub-max grid value
-        // {
-        //     if (i == first_choice)
-        //         continue;
+        max = -1;
+        for (int i = 0; i < 8; i++) // neighbor grid with sub-max grid value
+        {
+            if (i == first_choice)
+                continue;
 
-        //     if (std::atof(nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][i].c_str()) > max)
-        //     {
-        //         second_choice = i;
-        //         max = std::atof(nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][i].c_str());
-        //     }
-        // }
+            if (std::atof(nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][i].c_str()) > max)
+            {
+                second_choice = i;
+                max = std::atof(nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][i].c_str());
+            }
+        }
 
-        // for (int i = 0; i < 3; i++)
-        // {
-        //     int choice;
+        max = -1;
+        for (int i = 0; i < 8; i++) // neighbor grid with sub-max grid value
+        {
+            if (i == first_choice || i == second_choice)
+                continue;
 
-        //     if (i == 0)
-        //     {
-        //         choice = first_choice;
-        //     }
-        //     else if (i == 1)
-        //     {
-        //         choice = second_choice;
-        //     }
-        //     else if (i == 2)
-        //     {
-        //         Next_hop_row[i] = index_row[0];
-        //         Next_hop_col[i] = index_col[0];
-        //         continue;
-        //     }
+            if (std::atof(nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][i].c_str()) > max)
+            {
+                third_choice = i;
+                max = std::atof(nextHopGrid[index_row[0] * BOARD_COLS + index_col[0]][index_row[1] * BOARD_COLS + index_col[1]][i].c_str());
+            }
+        }
 
-        //     if (choice == 0)
-        //     {
-        //         Next_hop_row[i] = index_row[0] - 1;
-        //         Next_hop_col[i] = index_col[0];
-        //     }
-        //     else if (choice == 1)
-        //     {
-        //         Next_hop_row[i] = index_row[0] + 1;
-        //         Next_hop_col[i] = index_col[0];
-        //     }
-        //     else if (choice == 2)
-        //     {
-        //         Next_hop_row[i] = index_row[0];
-        //         Next_hop_col[i] = index_col[0] - 1;
-        //     }
-        //     else if (choice == 3)
-        //     {
-        //         Next_hop_row[i] = index_row[0];
-        //         Next_hop_col[i] = index_col[0] + 1;
-        //     }
-        // }
+        for (int i = 0; i < 4; i++)
+        {
+            int choice;
+
+            if (i == 0)
+            {
+                choice = first_choice;
+            }
+            else if (i == 1)
+            {
+                choice = second_choice;
+            }
+            else if (i == 2)
+            {
+                choice = third_choice;
+            }
+            else if (i == 3)
+            {
+                select_row[i] = index_row[0];
+                select_col[i] = index_col[0];
+                continue;
+            }
+
+            if (choice == 0)
+            {
+                select_row[i] = index_row[0] - 1;
+                select_col[i] = index_col[0];
+            }
+            else if (choice == 1)
+            {
+                select_row[i] = index_row[0] + 1;
+                select_col[i] = index_col[0];
+            }
+            else if (choice == 2)
+            {
+                select_row[i] = index_row[0];
+                select_col[i] = index_col[0] - 1;
+            }
+            else if (choice == 3)
+            {
+                select_row[i] = index_row[0];
+                select_col[i] = index_col[0] + 1;
+            }
+            else if (choice == 4)
+            {
+                select_row[i] = index_row[0] - 1;
+                select_col[i] = index_col[0] + 1;
+            }
+            else if (choice == 5)
+            {
+                select_row[i] = index_row[0] + 1;
+                select_col[i] = index_col[0] - 1;
+            }
+            else if (choice == 6)
+            {
+                select_row[i] = index_row[0] - 1;
+                select_col[i] = index_col[0] - 1;
+            }
+            else if (choice == 7)
+            {
+                select_row[i] = index_row[0] + 1;
+                select_col[i] = index_col[0] + 1;
+            }
+        }
     }
 
-    // for (int i = 0; i < 2; i++)
-    //     std::cout << "Index: " << index_row[i] << " " << index_col[i] << ", ";
-    // std::cout << std::endl;
-    // for (int i = 0; i < 6; i++)
-    //     std::cout << Next_hop_row[i] << " " << Next_hop_col[i] << ", ";
-    // std::cout << std::endl;
-
-    Ipv4Address nextHopAddress[2], rec_nextHopAddress[3];
+    Ipv4Address nextHopAddress[2];
+    Ipv4Address rec_nextHopAddress[4];
 
     bool send_check[2] = {false, false};
-    double rec_value[2] = {-100000000000, -100000000000};
+    double rec_value[2] = {0, 0};
 
-    bool check[3] = {false, false, false};
-    double rec_distance[3] = {1000000, 1000000, 1000000};
+    bool check[4] = {false, false, false, false};
+    double rec_distance[4] = {1000000, 1000000, 1000000, 1000000};
 
     PayLoadConstructor payload = PayLoadConstructor(HELLO);
     payload.fromPacket(packet);
 
     uint32_t UID = payload.getUid();
     uint32_t ttl = payload.getTtl();
-    int temp_distance, validation;
-
-    double time = Simulator::Now().GetSeconds();
+    double temp_distance, validation;
 
     for (std::vector<std::string>::iterator iter = existNode[(int)time].begin(); iter != existNode[(int)time].end(); iter++)
     {
@@ -578,26 +670,28 @@ void ScheduleNeighbor(Ptr<Socket> socket, Ptr<Packet> packet, NodeHandler *curre
         validation = dist(node_X, node_Y, src_X, src_Y);
 
         // find the destination
-        if (payload.getDestinationAddress() == ipSender && validation <= distance - 20)
+        if (payload.getDestinationAddress() == ipSender && (int)validation <= distance)
         {
             nextHopAddress[0] = ipSender;
             send_check[0] = true;
+            rec_nextHopAddress[0] = ipSender;
+            check[0] = true;
             break;
         }
 
-        if (node < numPair * 2 || validation > distance - 20 || neighborNode->searchInStack(UID) == true)
+        if (node < numPair * 2 || (int)validation > distance || neighborNode->searchInStack(UID) == true)
             continue;
 
-        int Time_diff[6] = {0, 0, 0, 0, 0, 0};
+        int Time_diff[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < 3; i++)
         {
             for (int window = 1; window <= MAX_window; window++)
             {
-                int future_X = gridRecord[time + window][node - numPair * 2][0];
-                int future_Y = gridRecord[time + window][node - numPair * 2][1];
+                int future_X = gridRecord[(int)time + window][node - numPair * 2][0];
+                int future_Y = 4000 - gridRecord[(int)time + window][node - numPair * 2][1];
 
-                if (future_Y == -1 || future_X == -1)
+                if (future_Y == -1 || future_X == -1 || Next_hop_row[i] == -1)
                     break;
 
                 if (future_Y / (int)gridSize == Next_hop_row[i] && future_X / (int)gridSize == Next_hop_col[i])
@@ -607,59 +701,112 @@ void ScheduleNeighbor(Ptr<Socket> socket, Ptr<Packet> packet, NodeHandler *curre
                 }
             }
 
-            if (Time_diff[i] != 0)
+            for (int j = 0; j < 3; j++)
             {
-                for (int j = 0; j < 2; j++)
+                for (int window = 1; window <= MAX_window; window++)
                 {
-                    for (int window = 1; window <= MAX_window; window++)
+                    int future_X = gridRecord[(int)time + Time_diff[i] + window][node - numPair * 2][0];
+                    int future_Y = 4000 - gridRecord[(int)time + Time_diff[i] + window][node - numPair * 2][1];
+
+                    if (future_Y == -1 || future_X == -1 || Next_hop_row[j + 3 * (i + 1)] == -1)
+                        break;
+
+                    if (future_Y / (int)gridSize == Next_hop_row[j + 3 * (i + 1)] && future_X / (int)gridSize == Next_hop_col[j + 3 * (i + 1)])
                     {
-                        int future_X = gridRecord[time + Time_diff[i] + window][node - numPair * 2][0];
-                        int future_Y = gridRecord[time + Time_diff[i] + window][node - numPair * 2][1];
-
-                        if (future_Y == -1 || future_X == -1)
-                            break;
-
-                        if (future_Y / (int)gridSize == Next_hop_row[j + 2 * (i + 1)] && future_X / (int)gridSize == Next_hop_col[j + 2 * (i + 1)])
-                        {
-                            Time_diff[j + 2 * (i + 1)] = window;
-                            break;
-                        }
+                        Time_diff[j + 3 * (i + 1)] = window;
+                        break;
                     }
                 }
             }
         }
 
-        // for (int i = 0; i < 6; i++)
-        //     std::cout << Time_diff[i] << " ";
+        // for (int i = 0; i < 12; i++)
+        //     std::cout << Time_diff[i] << "," << Grid_value[i] << "\t";
         // std::cout << std::endl;
 
-        double temp_projection[2] = {0, 0};
-        double value = 0;
+        // double temp_projection[3] = {0, 0, 0};
+        double value;
 
-        if (Next_hop_row[0] != -1)
-            temp_projection[0] = 0 - (((Next_hop_col[0] - 1) * 1000 + 500 - src_X) * (node_X - src_X) + ((Next_hop_row[0] - 1) * 1000 + 500 - src_Y) * (node_Y - src_Y)) / gridSize / gridSize;
-        if (Next_hop_row[1] != -1)
-            temp_projection[1] = 0 - (((Next_hop_col[1] - 1) * 1000 + 500 - src_X) * (node_X - src_X) + ((Next_hop_row[1] - 1) * 1000 + 500 - src_Y) * (node_Y - src_Y)) / gridSize / gridSize;
+        // if (Next_hop_row[0] != -1)
+        //     temp_projection[0] = (((Next_hop_col[0] - 1) * 1000 + 500 - src_X) * (node_X - src_X) + ((Next_hop_row[0] - 1) * 1000 + 500 - src_Y) * (node_Y - src_Y)) / gridSize / gridSize;
+        // if (Next_hop_row[1] != -1)
+        //     temp_projection[1] = (((Next_hop_col[1] - 1) * 1000 + 500 - src_X) * (node_X - src_X) + ((Next_hop_row[1] - 1) * 1000 + 500 - src_Y) * (node_Y - src_Y)) / gridSize / gridSize;
+        // if (Next_hop_row[2] != -1)
+        //     temp_projection[2] = (((Next_hop_col[2] - 1) * 1000 + 500 - src_X) * (node_X - src_X) + ((Next_hop_row[2] - 1) * 1000 + 500 - src_Y) * (node_Y - src_Y)) / gridSize / gridSize;
 
         // std::cout << temp_projection[0] << " " << temp_projection[1] << std::endl;
 
-        for (int i = 0; i < 2; i++)
+        // for (int i = 0; i < 2; i++)
+        // {
+        //     for (int j = 0; j < 2; j++)
+        //     {
+        //         if (Time_diff[i] != 0 && Time_diff[j + 2 * (i + 1)] != 0)
+        //         {
+        //             value = temp_projection[i] * Grid_value[i] / Time_diff[i] * Grid_value[j + 2 * (i + 1)] / Time_diff[j + 2 * (i + 1)];
+        //             if (value > rec_value[0])
+        //             {
+        //                 nextHopAddress[0] = ipSender;
+        //                 rec_value[0] = value;
+        //                 send_check[0] = true;
+        //             }
+        //         }
+        //     }
+        // }
+
+        // for (int i = 0; i < 6; i++)
+        // {
+        //     if (Time_diff[i] != 0)
+        //     {
+        //         value = temp_projection[i] * Grid_value[i] / Time_diff[i];
+        //         if (value > rec_value[1])
+        //         {
+        //             nextHopAddress[1] = ipSender;
+        //             rec_value[1] = value;
+        //             send_check[1] = true;
+        //         }
+        //     }
+        // }
+
+        for (int i = 0; i < 12; i++)
         {
             if (Time_diff[i] != 0)
             {
-                value = temp_projection[i] * Grid_value[i] / Time_diff[i];
+                if (Next_hop_row[i] == index_row[1] && Next_hop_col[i] == index_col[1])
+                {
+                    value = 1 / temp_distance * Grid_value[i] / Time_diff[i] * 100;
+                    dst_grid = true;
+                }
+                else
+                {
+                    value = 1 / temp_distance * Grid_value[i] / Time_diff[i];
+                }
+
                 if (value > rec_value[1])
                 {
                     nextHopAddress[1] = ipSender;
                     rec_value[1] = value;
                     send_check[1] = true;
                 }
+            }
+        }
 
-                for (int j = 0; j < 2; j++)
+        if (dst_grid != true)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                for (int j = 0; j < 3; j++)
                 {
-                    if (Time_diff[j + 2 * (i + 1)] != 0)
+                    if (Time_diff[i] != 0 && Time_diff[j + 3 * (i + 1)] != 0)
                     {
-                        value = temp_projection[i] * Grid_value[i] / Time_diff[i] * Grid_value[j + 2 * (i + 1)] / Time_diff[j + 2 * (i + 1)];
+                        if (Next_hop_row[j + 3 * (i + 1)] == index_row[1] && Next_hop_col[j + 3 * (i + 1)] == index_col[1])
+                        {
+                            value = 1 / temp_distance * Grid_value[i] / Time_diff[i] * Grid_value[j + 3 * (i + 1)] / Time_diff[j + 3 * (i + 1)] * 100;
+                        }
+                        else
+                        {
+                            value = 1 / temp_distance * Grid_value[i] / Time_diff[i] * Grid_value[j + 3 * (i + 1)] / Time_diff[j + 3 * (i + 1)];
+                        }
+
                         if (value > rec_value[0])
                         {
                             nextHopAddress[0] = ipSender;
@@ -671,26 +818,18 @@ void ScheduleNeighbor(Ptr<Socket> socket, Ptr<Packet> packet, NodeHandler *curre
             }
         }
 
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < 4; i++)
         {
-            if (Next_hop_col[i] == index_row[2] && Next_hop_col[i] == index_col[2])
+            if (select_row[i] == index_row[2] && select_col[i] == index_col[2])
             {
-                if (temp_distance < rec_distance[i] && validation <= distance - 20 && neighborNode->searchInStack(UID) == false)
+                temp_distance = dist(node_X, node_Y, dst_X, dst_Y);
+
+                if (temp_distance < rec_distance[i])
                 {
                     rec_nextHopAddress[i] = ipSender;
                     rec_distance[i] = temp_distance;
                     check[i] = true;
                 }
-            }
-        }
-
-        if (index_row[0] == index_row[2] && index_col[0] == index_col[2])
-        {
-            if (temp_distance < rec_distance[2] && validation <= distance - 20 && neighborNode->searchInStack(UID) == false)
-            {
-                rec_nextHopAddress[2] = ipSender;
-                rec_distance[2] = temp_distance;
-                check[2] = true;
             }
         }
     }
@@ -707,21 +846,21 @@ void ScheduleNeighbor(Ptr<Socket> socket, Ptr<Packet> packet, NodeHandler *curre
             if (currentNode->searchInStack(UID) == false)
                 currentNode->pushInStack(UID);
 
-            std::cout << Simulator::Now().GetSeconds() << "\t" << currentNode->getNodeID() << "\tget nextHopAddress: " << nextHopAddress[i] << std::endl;
+            std::cout << Simulator::Now().GetSeconds() << "\t" << currentNode->getNodeID() << "\tt-get nextHopAddress: " << nextHopAddress[i] << std::endl;
 
             Ptr<Socket> new_socket = Socket::CreateSocket(c.Get(socket->GetNode()->GetId()), tid);
             InetSocketAddress remote = InetSocketAddress(nextHopAddress[i], 80);
             new_socket->Connect(remote);
 
             Ptr<UniformRandomVariable> x = CreateObject<UniformRandomVariable>();
-            double randomPause = x->GetValue(0, 0.5);
-            Simulator::Schedule(Seconds(randomPause), &GenerateTraffic, new_socket, packet, UID, ttl);
+            // double randomPause = x->GetValue(0, 0.5);
+            Simulator::Schedule(Seconds(0), &GenerateTraffic, new_socket, packet, UID, ttl);
             sent = true;
             break;
         }
     }
 
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 4; i++)
     {
         if (check[i] == true && sent == false)
         {
@@ -739,8 +878,8 @@ void ScheduleNeighbor(Ptr<Socket> socket, Ptr<Packet> packet, NodeHandler *curre
             new_socket->Connect(remote);
 
             Ptr<UniformRandomVariable> x = CreateObject<UniformRandomVariable>();
-            double randomPause = x->GetValue(0, 0.5);
-            Simulator::Schedule(Seconds(randomPause), &GenerateTraffic, new_socket, packet, UID, ttl);
+            // double randomPause = x->GetValue(0, 0.5);
+            Simulator::Schedule(Seconds(0), &GenerateTraffic, new_socket, packet, UID, ttl);
             sent = true;
             break;
         }
@@ -839,8 +978,8 @@ void ReceivePacket(Ptr<Socket> socket)
                     currentNode->savePacketsInBuffer(payload);
 
                     Ptr<UniformRandomVariable> x = CreateObject<UniformRandomVariable>();
-                    double randomPause = x->GetValue(0, 0.5);
-                    Simulator::Schedule(Seconds(randomPause), &ScheduleNeighbor, socket, packet, currentNode, destinationId);
+                    // double randomPause = x->GetValue(0, 0.5);
+                    Simulator::Schedule(Seconds(0), &ScheduleNeighbor, socket, packet, currentNode, destinationId);
                 }
             }
         }
@@ -854,20 +993,20 @@ int main(int argc, char *argv[])
     helloSendAfter = 1;
 
     // double simulationTime = 569.00;
-    double simulationTime = 23.00;
-    double sendUntil = 20.00;
-    double warmingTime = 2.00;
+    double simulationTime = 100.00;
+    double sendUntil = 50.00;
+    double warmingTime = 10.00;
     uint32_t seed = 91;
 
-    numPair = 150;
-    uint32_t numNodes = 3214;
-    uint32_t sendAfter = 1;
+    numPair = 100;
+    uint32_t numNodes = 3000;
+    uint32_t sendAfter = 5;
     uint32_t sinkNode;
     uint32_t sourceNode;
 
     uint32_t TTL = 50;
     uint32_t UID = 1;
-    MAX_window = 200;
+    MAX_window = 5;
 
     CommandLine cmd;
     cmd.AddValue("phyMode", "Wifi Phy mode", phyMode);
@@ -890,7 +1029,7 @@ int main(int argc, char *argv[])
     std::string tempstr;
     std::ifstream file;
 
-    file.open("/home/ycpin/Dataset/平日_7_9/exist_file/exist_2022-01-04_150_0.txt", std::ios::in);
+    file.open("/home/ycpin/Dataset/平日_7_9/exist_file/exist_2022-01-04_100_0.txt", std::ios::in);
     while (getline(file, tempstr))
     {
         std::stringstream ss(tempstr);
@@ -912,7 +1051,7 @@ int main(int argc, char *argv[])
     }
     file.close();
 
-    file.open("/home/ycpin/Dataset/Q-table/平日_7-9.txt", std::ios::in);
+    file.open("/home/ycpin/Dataset/Q-table/平日_7-9_test.txt", std::ios::in);
     uint32_t count_a = 0, count_b = 0;
 
     while (getline(file, tempstr))
@@ -922,7 +1061,7 @@ int main(int argc, char *argv[])
         std::istream_iterator<std::string> end;
         std::vector<std::string> tokens(begin, end);
 
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 8; i++)
             nextHopGrid[count_a][count_b][i] = tokens[i];
 
         count_b += 1;
@@ -935,7 +1074,7 @@ int main(int argc, char *argv[])
     }
 
     file.close();
-    file.open("/home/ycpin/Dataset/平日_7_9/location_file/location_2022-01-04_150_0.txt", std::ios::in);
+    file.open("/home/ycpin/Dataset/平日_7_9/location_file/location_2022-01-04_100_0.txt", std::ios::in);
 
     for (int i = 0; i < 600; i++)
     {
@@ -990,7 +1129,7 @@ int main(int argc, char *argv[])
     NetDeviceContainer devices = wifi.Install(wifiPhy, wifiMac, c);
 
     // Import the trace file.
-    Ns2MobilityHelper ns2 = Ns2MobilityHelper("/home/ycpin/Dataset/平日_7_9/mobility_file/mobility_2022-01-04_150_0.tcl");
+    Ns2MobilityHelper ns2 = Ns2MobilityHelper("/home/ycpin/Dataset/平日_7_9/mobility_file/mobility_2022-01-04_100_0_test.tcl");
     ns2.Install(); // configure movements for each node, while reading trace file
 
     InternetStackHelper internet;
